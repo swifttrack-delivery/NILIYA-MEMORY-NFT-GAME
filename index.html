@@ -1,0 +1,1250 @@
+<!--- 
+Memory NFT Game - On-Chain Matching with NFT Rewards
+===================================================
+
+Author:     Aditya Anil (aditya-an1l)
+Date:       February 21, 2026
+Tech Stack: Ethereum Sepolia Testnet, Solidity Smart Contracts (ERC-721 NFTs),
+            React/HTML5 Frontend, Ethers.js, MetaMask Wallet Integration
+GitHub:     https://github.com/aditya-an1l/memory-nft-game.git
+Contract:   0x373b7522a4dF094c6143529c32DBc425a4702d59 (Sepolia)
+
+Description:
+A responsive memory matching game where players flip cards to find 6 shape pairs.
+- Off-chain mode: Local play with simulated NFT ticker.
+- On-chain mode: Submit pairs to smart contract for verification; matches mint
+  unique Shape NFTs (Circle, Square, Triangle, Star, Heart, Diamond) to wallet.
+Features: Telegram Mini App support, animated UI, move/time tracking, win modal.
+
+
+License: MIT
+Version: 1.0
+--->
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Memory NFT</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.1/ethers.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@walletconnect/web3-provider@1.8.0/dist/umd/index.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+  :root {
+    --bg:      #0b0e11;
+    --surface: #161a1e;
+    --card-bg: #1e2329;
+    --card-face:#1e2329;
+    --border:  rgba(255,255,255,.07);
+    --accent:  #f0b90b;
+    --accent2: #f0b90b;
+    --gold:    var(--accent);
+    --accent3: var(--accent);
+    --green:   #0ecb81;
+    --red:     #f6465d;
+    --text:    #eaecef;
+    --subtext: #848e9c;
+    --radius:  6px;
+    --shadow:  0 4px 24px rgba(0,0,0,.4);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:'Inter',sans-serif;
+    background:var(--bg);
+    color:var(--text);
+    min-height:100vh;
+    display:flex;flex-direction:column;align-items:center;
+    overflow-x:hidden;
+  }
+
+  /* ── Header ── */
+  header{
+    width:100%;max-width:480px;
+    padding:16px 20px;
+    display:flex;align-items:center;justify-content:space-between;
+    border-bottom:1px solid var(--border);
+  }
+  .logo{
+    font-size:1rem;font-weight:700;
+    letter-spacing:.08em;text-transform:uppercase;
+    color:var(--accent);
+  }
+  .wallet-btn{
+    background:var(--accent);
+    border:none;border-radius:var(--radius);
+    color:#000;font-family:'Inter',sans-serif;
+    font-weight:600;font-size:.78rem;
+    padding:8px 16px;cursor:pointer;
+    transition:opacity .15s;white-space:nowrap;
+  }
+
+.freeplay-btn{
+    background:transparent;
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    color:var(--subtext);
+    font-family:'Inter',sans-serif;
+    font-weight:500;font-size:.75rem;
+    padding:7px 14px;cursor:pointer;
+    transition:border-color .15s,color .15s;
+    white-space:nowrap;
+    text-decoration:none;
+    display:inline-flex;align-items:center;gap:5px;
+  }
+  .freeplay-btn:hover{border-color:var(--accent);color:var(--accent)}
+  .wallet-btn:hover{opacity:.85}
+  .net-badge{
+    display:inline-block;
+    background:rgba(240,185,11,.1);
+    color:var(--accent);
+    border-radius:4px;font-size:.62rem;font-weight:600;
+    padding:2px 7px;margin-left:8px;
+    border:1px solid rgba(240,185,11,.25);
+    text-transform:uppercase;letter-spacing:.05em;
+  }
+
+  /* ── Tabs ── */
+  .tab-nav{
+    width:100%;max-width:480px;
+    display:flex;
+    border-bottom:1px solid var(--border);
+  }
+  .tab-btn{
+    flex:1;padding:12px 0;border:none;
+    background:transparent;
+    color:var(--subtext);
+    font-family:'Inter',sans-serif;font-weight:500;font-size:.85rem;
+    cursor:pointer;transition:color .15s;
+    border-bottom:2px solid transparent;
+    margin-bottom:-1px;
+  }
+  .tab-btn.active{color:var(--accent);border-bottom-color:var(--accent);}
+
+  .tab-panel{display:none;width:100%;max-width:480px;flex-direction:column;align-items:center}
+  .tab-panel.show{display:flex}
+
+  /* ── Score bar ── */
+  .scorebar{width:100%;padding:14px 20px 10px;display:flex;gap:0}
+  .score-chip{
+    flex:1;display:flex;flex-direction:column;align-items:center;
+    padding:10px 0;
+    border-right:1px solid var(--border);
+  }
+  .score-chip:last-child{border-right:none}
+  .score-chip .label{
+    font-size:.62rem;text-transform:uppercase;
+    letter-spacing:.08em;color:var(--subtext);font-weight:500;
+  }
+  .score-chip .value{
+    font-size:1.25rem;font-weight:700;
+    color:var(--text);margin-top:3px;
+  }
+  .score-chip.moves .value{color:var(--text)}
+  .score-chip.timer .value{color:var(--text)}
+
+  /* ── Status ── */
+  .status-banner{
+    width:100%;padding:8px 20px;
+    font-size:.78rem;color:var(--subtext);
+    min-height:30px;text-align:center;
+    transition:color .2s;
+  }
+  .status-banner.success{color:var(--green)}
+  .status-banner.error{color:var(--red)}
+  .status-banner.info{color:var(--accent)}
+
+  /* ── Card grid ── */
+  .grid-wrap{width:100%;padding:4px 16px 12px}
+  .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+  .card{aspect-ratio:3/4;perspective:600px;cursor:pointer}
+  .card-inner{
+    width:100%;height:100%;position:relative;
+    transform-style:preserve-3d;
+    transition:transform .4s cubic-bezier(.4,0,.2,1);
+    border-radius:var(--radius);
+  }
+  .card.flipped .card-inner,.card.matched .card-inner{transform:rotateY(180deg)}
+  .card-back,.card-front{
+    position:absolute;inset:0;
+    border-radius:var(--radius);
+    backface-visibility:hidden;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .card-back{
+    background:var(--card-bg);
+    border:1px solid var(--border);
+  }
+  .card-back .pattern{
+    display:grid;grid-template-columns:repeat(3,1fr);
+    grid-template-rows:repeat(3,1fr);
+    gap:3px;width:55%;height:55%;opacity:.15;
+  }
+  .card-back .pattern span{
+    background:var(--subtext);
+    border-radius:1px;
+  }
+  .card-front{
+    background:var(--card-face);
+    border:1px solid var(--border);
+    transform:rotateY(180deg);
+  }
+  .card.matched .card-front{
+    border-color:var(--green);
+    background:rgba(14,203,129,.06);
+  }
+  .shape-icon{
+    width:52%;height:52%;
+    min-width:24px;min-height:24px;
+    display:block;overflow:visible;
+  }
+  .card:not(.matched):not(.flipped):hover .card-back{
+    border-color:rgba(240,185,11,.4);
+  }
+  .card:not(.matched):active{transform:scale(.97)}
+  .card.shake{animation:shake .35s ease}
+  @keyframes shake{
+    0%,100%{transform:translateX(0)}
+    20%{transform:translateX(-5px)}
+    40%{transform:translateX(5px)}
+    60%{transform:translateX(-3px)}
+    80%{transform:translateX(3px)}
+  }
+  .card.pop{animation:pop .25s ease}
+  @keyframes pop{0%{transform:scale(1)}50%{transform:scale(1.06)}100%{transform:scale(1)}}
+
+  /* ── Buttons ── */
+  .btn-row{width:100%;padding:4px 16px 20px;display:flex;gap:8px}
+  .btn{
+    flex:1;padding:11px;border:none;
+    border-radius:var(--radius);
+    font-family:'Inter',sans-serif;font-weight:600;font-size:.88rem;
+    cursor:pointer;transition:opacity .15s;
+  }
+  .btn:active{opacity:.8}
+  .btn-primary{background:var(--accent);color:#000;}
+  .btn-primary:hover{opacity:.9}
+  .btn-secondary{
+    background:transparent;color:var(--text);
+    border:1px solid var(--border);
+  }
+  .btn-secondary:hover{border-color:rgba(255,255,255,.2)}
+  .btn:disabled{opacity:.35;cursor:not-allowed}
+  .tx-spinner{
+    display:none;width:14px;height:14px;
+    border:2px solid rgba(0,0,0,.2);
+    border-top-color:#000;
+    border-radius:50%;animation:spin .6s linear infinite;
+    vertical-align:middle;margin-right:6px;
+  }
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .tx-spinner.show{display:inline-block}
+
+  /* ── NFT ticker ── */
+  .nft-ticker{
+    width:100%;padding:0 16px 8px;
+    display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;
+  }
+  .nft-ticker::-webkit-scrollbar{display:none}
+  .nft-chip{
+    flex-shrink:0;
+    background:rgba(240,185,11,.08);
+    border:1px solid rgba(240,185,11,.2);
+    border-radius:4px;
+    padding:4px 10px;font-size:.72rem;
+    color:var(--accent);font-weight:500;
+    display:flex;align-items:center;gap:5px;
+    animation:slideIn .25s ease;
+  }
+  @keyframes slideIn{from{opacity:0;transform:translateX(12px)}to{opacity:1;transform:translateX(0)}}
+
+  /* ── Analytics ── */
+  .analytics-wrap{width:100%;padding:8px 16px 24px;display:flex;flex-direction:column;gap:10px}
+  .analytics-header{display:flex;align-items:center;justify-content:space-between;padding:8px 0}
+  .analytics-header h2{font-size:1rem;font-weight:600;color:var(--text)}
+  .refresh-btn{
+    background:transparent;border:1px solid var(--border);
+    border-radius:var(--radius);color:var(--subtext);
+    font-size:.75rem;font-weight:500;padding:5px 12px;
+    cursor:pointer;transition:border-color .15s,color .15s;
+  }
+  .refresh-btn:hover{color:var(--text);border-color:rgba(255,255,255,.2)}
+  .stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .stat-card{
+    background:var(--surface);
+    border-radius:var(--radius);padding:14px;
+    border:1px solid var(--border);
+  }
+  .stat-card::before{display:none}
+  .stat-card .s-label{
+    font-size:.62rem;text-transform:uppercase;
+    letter-spacing:.08em;color:var(--subtext);
+    font-weight:500;margin-bottom:6px;
+  }
+  .stat-card .s-value{font-size:1.6rem;font-weight:700;line-height:1}
+  .stat-card .s-sub{font-size:.7rem;color:var(--subtext);margin-top:4px}
+  .stat-card.green .s-value{color:var(--green)}
+  .stat-card.purple .s-value{color:var(--accent)}
+  .stat-card.blue .s-value{color:var(--text)}
+  .stat-card.red .s-value{color:var(--red)}
+  .token-row,.gas-row,.nft-section,.tx-section{
+    background:var(--surface);
+    border-radius:var(--radius);padding:16px;
+    border:1px solid var(--border);
+  }
+  .token-row h3,.gas-row h3,.nft-section h3,.tx-section h3{
+    font-size:.65rem;text-transform:uppercase;
+    letter-spacing:.08em;color:var(--subtext);
+    font-weight:600;margin-bottom:12px;
+  }
+  .token-item{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:10px 0;border-bottom:1px solid var(--border);
+  }
+  .token-item:last-child{border-bottom:none;padding-bottom:0}
+  .token-left{display:flex;align-items:center;gap:10px}
+  .token-icon{
+    width:34px;height:34px;border-radius:50%;
+    display:flex;align-items:center;justify-content:center;
+    font-size:1rem;flex-shrink:0;
+    background:var(--card-bg);border:1px solid var(--border);
+  }
+  .token-name{font-weight:600;font-size:.88rem}
+  .token-sub{font-size:.68rem;color:var(--subtext);margin-top:2px}
+  .token-amount{font-size:1rem;font-weight:700;text-align:right}
+  .token-usd{font-size:.68rem;color:var(--subtext);margin-top:2px;text-align:right}
+  .gas-item{
+    display:flex;justify-content:space-between;align-items:center;
+    padding:8px 0;border-bottom:1px solid var(--border);
+  }
+  .gas-item:last-child{border-bottom:none}
+  .gas-label{font-size:.82rem;color:var(--subtext)}
+  .gas-val{font-size:.9rem;font-weight:600;color:var(--red)}
+  .nft-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:6px}
+  .nft-card-mini{
+    background:var(--card-bg);border-radius:var(--radius);
+    padding:8px 4px;display:flex;flex-direction:column;
+    align-items:center;gap:4px;
+    border:1px solid var(--border);
+  }
+  .nft-card-mini.owned{
+    border-color:var(--green);
+    background:rgba(14,203,129,.05);
+  }
+  .nft-card-mini svg{width:28px;height:28px}
+  .nft-card-mini .nft-count{font-size:.62rem;font-weight:700;color:var(--accent)}
+  .nft-card-mini .nft-name{font-size:.52rem;color:var(--subtext);text-align:center;line-height:1.2}
+  .tx-item{
+    display:flex;align-items:center;gap:10px;
+    padding:9px 0;border-bottom:1px solid var(--border);
+  }
+  .tx-item:last-child{border-bottom:none}
+  .tx-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+  .tx-dot.match{background:var(--green)}
+  .tx-dot.miss{background:var(--red)}
+  .tx-dot.create{background:var(--accent)}
+  .tx-body{flex:1;min-width:0}
+  .tx-title{font-size:.82rem;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tx-hash{font-size:.65rem;color:var(--subtext);font-family:monospace;margin-top:2px}
+  .tx-gas{font-size:.72rem;color:var(--subtext);text-align:right;white-space:nowrap}
+  .skeleton{
+    background:linear-gradient(90deg,var(--surface) 25%,var(--card-bg) 50%,var(--surface) 75%);
+    background-size:200% 100%;animation:shimmer 1.5s infinite;
+    border-radius:4px;height:18px;
+  }
+  @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+  .no-wallet{padding:48px 20px;text-align:center}
+  .no-wallet .icon{font-size:2.4rem;margin-bottom:12px}
+  .no-wallet h3{font-size:1rem;font-weight:600;color:var(--text);margin-bottom:6px}
+  .no-wallet p{color:var(--subtext);font-size:.85rem;line-height:1.6}
+
+  /* ── Wallet modal ── */
+  .wc-overlay{
+    display:none;position:fixed;inset:0;
+    background:rgba(0,0,0,.7);backdrop-filter:blur(6px);
+    z-index:200;align-items:center;justify-content:center;padding:20px;
+  }
+  .wc-overlay.show{display:flex}
+  .wc-modal{
+    background:var(--surface);
+    border-radius:8px;border:1px solid var(--border);
+    padding:24px;width:100%;max-width:320px;text-align:center;
+  }
+  .wc-modal h3{font-size:.95rem;font-weight:600;color:var(--text);margin-bottom:4px}
+  .wc-modal p{color:var(--subtext);font-size:.8rem;margin-bottom:16px;line-height:1.5}
+  #wcQrBox{
+    width:200px;height:200px;margin:0 auto 14px;
+    background:#fff;border-radius:6px;
+    display:flex;align-items:center;justify-content:center;
+    font-size:.75rem;color:#333;overflow:hidden;
+  }
+  #wcQrBox canvas{width:100%!important;height:100%!important}
+  .wc-uri{
+    font-size:.58rem;color:var(--subtext);word-break:break-all;
+    margin-bottom:14px;background:var(--card-bg);
+    padding:8px;border-radius:4px;cursor:pointer;
+    border:1px solid var(--border);
+  }
+  .wc-methods{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}
+  .wc-method-btn{
+    background:var(--card-bg);border:1px solid var(--border);
+    border-radius:var(--radius);color:var(--text);
+    font-family:'Inter',sans-serif;font-weight:500;font-size:.85rem;
+    padding:11px 14px;cursor:pointer;transition:border-color .15s;
+    text-align:left;display:flex;align-items:center;gap:10px;
+  }
+  .wc-method-btn:hover{border-color:var(--accent)}
+  .wc-method-btn .wc-icon{font-size:1.2rem}
+
+  /* ── Win modal ── */
+  .modal-overlay{
+    display:none;position:fixed;inset:0;
+    background:rgba(0,0,0,.75);backdrop-filter:blur(6px);
+    z-index:100;align-items:center;justify-content:center;padding:20px;
+  }
+  .modal-overlay.show{display:flex}
+  .modal{
+    background:var(--surface);border-radius:8px;
+    border:1px solid var(--border);
+    padding:28px 24px;width:100%;max-width:340px;text-align:center;
+    animation:modalIn .3s ease;
+  }
+  @keyframes modalIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+  .modal .trophy{font-size:2.8rem;margin-bottom:10px}
+  .modal h2{font-size:1.4rem;font-weight:700;color:var(--text);margin-bottom:6px}
+  .modal p{color:var(--subtext);font-size:.88rem;margin-bottom:18px}
+  .modal .stat-row{display:flex;gap:8px;margin-bottom:20px}
+  .modal .stat{
+    flex:1;background:var(--card-bg);
+    border-radius:var(--radius);padding:12px;
+    border:1px solid var(--border);
+  }
+  .modal .stat-val{font-size:1.4rem;font-weight:700;color:var(--accent)}
+  .modal .stat-lbl{font-size:.62rem;text-transform:uppercase;letter-spacing:.06em;color:var(--subtext);margin-top:2px}
+  .modal .nft-minted{font-size:.78rem;color:var(--green);margin-bottom:18px;font-weight:500}
+</style>
+</head>
+<body>
+
+<header>
+  <div><span class="logo">MEMORY NFT</span><span class="net-badge">SEPOLIA</span></div>
+  <div style="display:flex;align-items:center;gap:8px">
+    <a class="freeplay-btn" href="memory-game-without-wallet.html" target="_blank">▶ Play Free</a>
+    <button class="wallet-btn" id="connectBtn">Connect Wallet</button>
+  </div>
+</header>
+
+<div class="tab-nav">
+<button class="tab-btn active" id="tabBtnGame" onclick="switchTab('game',this)">Game</button>
+  <button class="tab-btn" id="tabBtnAnalytics" onclick="switchTab('analytics',this)">Analytics</button>
+</div>
+
+<div class="tab-panel show" id="tab-game">
+  <div class="scorebar">
+    <div class="score-chip"><span class="label">Pairs</span><span class="value" id="pairsFound">0</span></div>
+    <div class="score-chip moves"><span class="label">Moves</span><span class="value" id="moveCount">0</span></div>
+    <div class="score-chip timer"><span class="label">Time</span><span class="value" id="timerDisplay">0:00</span></div>
+  </div>
+  <div class="status-banner info" id="statusBanner">Connect your wallet to play on Sepolia!</div>
+  <div class="grid-wrap"><div class="grid" id="cardGrid"></div></div>
+  <div class="nft-ticker" id="nftTicker"><div class="nft-chip">🏅 NFTs minted here</div></div>
+  <div class="btn-row">
+    <button class="btn btn-secondary" onclick="newGame()">New Game</button>
+    <button class="btn btn-primary" id="startChainBtn" onclick="startChainGame()" disabled>
+      <span class="tx-spinner" id="chainSpinner"></span>Play On-Chain
+    </button>
+  </div>
+</div>
+
+<div class="tab-panel" id="tab-analytics">
+  <div class="analytics-wrap" id="analyticsContent">
+    <div class="no-wallet"><div class="icon">🔌</div>
+      <h3>Wallet Not Connected</h3>
+      <p>Connect your wallet first to see your stats.</p></div>
+  </div>
+</div>
+
+<div class="wc-overlay" id="wcOverlay">
+  <div class="wc-modal">
+    <h3>Connect Wallet</h3>
+    <p id="wcStatusText">Choose how to connect to Sepolia testnet</p>
+    <div class="wc-methods">
+      <button class="wc-method-btn" onclick="connectMetaMask()">
+        <span class="wc-icon">🦊</span>
+        <div><div style="font-size:.95rem">MetaMask</div><div style="font-size:.7rem;color:var(--subtext);font-weight:400">Browser extension</div></div>
+      </button>
+      <button class="wc-method-btn" onclick="connectWalletConnect()">
+        <span class="wc-icon">📱</span>
+        <div><div style="font-size:.95rem">WalletConnect</div><div style="font-size:.7rem;color:var(--subtext);font-weight:400">Scan QR with MetaMask app</div></div>
+      </button>
+    </div>
+    <div id="wcQrSection" style="display:none">
+      <div id="wcQrBox">Generating QR...</div>
+      <div class="wc-uri" id="wcUri" onclick="copyWcUri()" title="Click to copy">Tap to copy URI</div>
+      <p style="font-size:.75rem;color:var(--subtext)">Open MetaMask app → Scan QR  or  paste the URI</p>
+    </div>
+    <button class="btn btn-secondary" onclick="closeWcModal()" style="margin-top:4px">Cancel</button>
+  </div>
+</div>
+
+<div class="modal-overlay" id="winModal">
+  <div class="modal">
+    <div class="trophy">🏆</div><h2>You Won!</h2>
+    <p id="winSubtitle">Amazing memory!</p>
+    <div class="stat-row">
+      <div class="stat"><div class="stat-val" id="winPairs">6</div><div class="stat-lbl">Pairs</div></div>
+      <div class="stat"><div class="stat-val" id="winMoves">0</div><div class="stat-lbl">Moves</div></div>
+      <div class="stat"><div class="stat-val" id="winTime">0:00</div><div class="stat-lbl">Time</div></div>
+    </div>
+    <div class="nft-minted" id="nftMintedMsg"></div>
+    <div class="btn-row" style="padding:0">
+      <button class="btn btn-secondary" onclick="closeModal()">Close</button>
+      <button class="btn btn-primary" onclick="newGame();closeModal()">Play Again</button>
+    </div>
+  </div>
+</div>
+
+<svg style="position:absolute;width:0;height:0;overflow:hidden" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="g1" cx="35%" cy="30%"><stop offset="0%" stop-color="#ff9de2"/><stop offset="100%" stop-color="#c77dff"/></radialGradient>
+    <radialGradient id="g2" cx="35%" cy="30%"><stop offset="0%" stop-color="#4cc9f0"/><stop offset="100%" stop-color="#4361ee"/></radialGradient>
+    <radialGradient id="g3" cx="50%" cy="40%"><stop offset="0%" stop-color="#f9c74f"/><stop offset="100%" stop-color="#f3722c"/></radialGradient>
+    <radialGradient id="g4" cx="50%" cy="40%"><stop offset="0%" stop-color="#ffd166"/><stop offset="100%" stop-color="#ef476f"/></radialGradient>
+    <radialGradient id="g5" cx="50%" cy="40%"><stop offset="0%" stop-color="#ff9de2"/><stop offset="100%" stop-color="#ef476f"/></radialGradient>
+    <radialGradient id="g6" cx="35%" cy="30%"><stop offset="0%" stop-color="#80ffdb"/><stop offset="100%" stop-color="#06d6a0"/></radialGradient>
+    <symbol id="shape-1" viewBox="0 0 100 100"><circle cx="50" cy="50" r="40" fill="url(#g1)"/></symbol>
+    <symbol id="shape-2" viewBox="0 0 100 100"><rect x="15" y="15" width="70" height="70" rx="8" fill="url(#g2)"/></symbol>
+    <symbol id="shape-3" viewBox="0 0 100 100"><polygon points="50,12 92,88 8,88" fill="url(#g3)"/></symbol>
+    <symbol id="shape-4" viewBox="0 0 100 100"><polygon points="50,8 61,37 92,37 68,57 76,86 50,68 24,86 32,57 8,37 39,37" fill="url(#g4)"/></symbol>
+    <symbol id="shape-5" viewBox="0 0 100 100"><path d="M50,82 C50,82 12,55 12,33 C12,20 22,12 33,14 C41,15 50,26 50,26 C50,26 59,15 67,14 C78,12 88,20 88,33 C88,55 50,82 50,82Z" fill="url(#g5)"/></symbol>
+    <symbol id="shape-6" viewBox="0 0 100 100"><polygon points="50,10 88,50 50,90 12,50" fill="url(#g6)"/></symbol>
+  </defs>
+</svg>
+<script>
+const CONTRACT_ADDRESS      = "0x2A73E2F47a678187585A925E8Bec4c1b07cD739F";
+const ALCHEMY_URL           = "https://eth-sepolia.g.alchemy.com/v2/wGHJY_ND2x5hjTUgoEs7Z";
+const ETHERSCAN_API_KEY     = "N6D3DATSNHAD17NHD7wGC93K1751GB19G3D"; 
+const WALLETCONNECT_PROJECT_ID = "4ddd4ea29055f91d4f90b23847b2f08d";
+
+const CONTRACT_ABI = [
+  "function createGame(uint256 shuffleSeed,bool singlePlayer) external returns (uint256)",
+  "function submitPair(uint256 gameId,uint8 idx1,uint8 idx2) external returns (bool isMatch,uint8 shape)",
+  "function getRevealedMask(uint256 gameId) external view returns (bool[12])",
+  "function getGameInfo(uint256 gameId) external view returns (address,address,address,uint8,uint8,bool)",
+  "function nextGameId() external view returns (uint256)",
+  "function getBoard(uint256 gameId) external view returns (uint8[12] memory)",
+  "function balanceOf(address account,uint256 id) external view returns (uint256)",
+  "event GameCreated(uint256 indexed gameId,address indexed player1,bool singlePlayer)",
+  "event PairMatched(uint256 indexed gameId,address indexed player,uint8 shape)",
+  "event PairMismatched(uint256 indexed gameId,address indexed player,uint8 index1,uint8 index2)",
+  "event GameOver(uint256 indexed gameId,address indexed winner,uint8 totalPairs)"
+];
+
+const SEPOLIA_CHAIN_ID = "0xaa36a7";
+const SEPOLIA_CHAIN_NUM = 11155111;
+const SHAPE_NAMES  = ["","Circle","Square","Triangle","Star","Heart","Diamond"];
+const SHAPE_EMOJIS = ["","⭕","⬛","🔺","⭐","❤️","💎"];
+
+// ════════════════════════════════════════════════════
+//  STATE
+// ════════════════════════════════════════════════════
+let provider, signer, contract, readProvider, readContract;
+let walletAddress = null, walletConnected = false;
+let onChainMode = false, gameId = null;
+let board=[], flipped=[], matched=[];
+let lockBoard=false, moves=0, pairs=0, seconds=0;
+let timerInterval=null, nftsMinted=[];
+let sessionGasSpent = 0n, sessionTxs = [];
+let wcProvider = null;
+
+// ════════════════════════════════════════════════════
+//  TELEGRAM
+// ════════════════════════════════════════════════════
+if (window.Telegram?.WebApp) {
+  Telegram.WebApp.ready();
+  Telegram.WebApp.expand();
+  Telegram.WebApp.setHeaderColor('#0d0d1a');
+  Telegram.WebApp.setBackgroundColor('#0d0d1a');
+}
+
+// ════════════════════════════════════════════════════
+//  TABS
+// ════════════════════════════════════════════════════
+function switchTab(tab, btn) {
+  document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('show'));
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('tab-'+tab).classList.add('show');
+  btn.classList.add('active');
+  if (tab==='analytics' && walletConnected) loadAnalytics();
+}
+
+// ════════════════════════════════════════════════════
+//  WALLET
+// ════════════════════════════════════════════════════
+function isInsideTelegram() {
+  return !!(window.Telegram?.WebApp?.initData && window.Telegram.WebApp.initData.length > 0);
+}
+
+function getMetaMask() {
+  const eth = window.ethereum;
+  if (!eth) return null;
+  if (Array.isArray(eth.providers) && eth.providers.length) {
+    const mm = eth.providers.find(p => p.isMetaMask && !p.isBraveWallet);
+    if (mm) return mm;
+  }
+  if (eth.isMetaMask && !eth.isBraveWallet) return eth;
+  return null;
+}
+
+document.getElementById('connectBtn').addEventListener('click', () => {
+  document.getElementById('wcStatusText').textContent = 'Choose how to connect to Sepolia testnet';
+  document.getElementById('wcOverlay').classList.add('show');
+});
+
+function closeWcModal() {
+  document.getElementById('wcOverlay').classList.remove('show');
+  document.getElementById('wcQrSection').style.display = 'none';
+}
+
+function setWcStatus(msg, kind) {
+  const p = document.getElementById('wcStatusText');
+  if (!p) return;
+  p.textContent = msg;
+  p.style.color = kind === 'error' ? 'var(--red)'
+                : kind === 'success' ? 'var(--green)'
+                : '';
+}
+
+async function connectMetaMask() {
+  const mm = getMetaMask();
+  if (!mm) {
+    setWcStatus('MetaMask is not installed. Install from metamask.io.', 'error');
+    if (isInsideTelegram()) setWcStatus('MetaMask is not installed. Use WalletConnect instead.', 'error');
+    return;
+  }
+
+  setWcStatus('Please approve the connection in MetaMask...', '');
+  let accounts;
+  try {
+    accounts = await mm.request({ method: 'eth_requestAccounts' });
+  } catch (e) {
+    if (e.code === 4001)                setWcStatus('MetaMask connection rejected.', 'error');
+    else if (e.code === -32002)         setWcStatus('Connection request already pending — open MetaMask.', 'error');
+    else if (e.code === -32000 || /unlock/i.test(e.message)) setWcStatus('Please unlock MetaMask and try again.', 'error');
+    else                                setWcStatus('MetaMask error: ' + (e.message || e), 'error');
+    return;
+  }
+  if (!accounts || !accounts.length) {
+    setWcStatus('No account returned by MetaMask.', 'error');
+    return;
+  }
+
+  setWcStatus('Switching to Sepolia...', '');
+  const ok = await switchToSepolia(mm);
+  if (!ok) {
+    setWcStatus('Failed to switch to Sepolia. Please approve the network in MetaMask.', 'error');
+    return;
+  }
+
+  setWcStatus('Connecting wallet...', '');
+  try {
+    provider = new ethers.BrowserProvider(mm);
+    signer   = await provider.getSigner();
+    await finishConnect();
+    closeWcModal();
+    bindWalletEvents(mm);
+  } catch (e) {
+    setWcStatus('Connection failed: ' + (e.message || e), 'error');
+  }
+}
+
+async function connectWalletConnect() {
+  if (!window.WalletConnectProvider) {
+    setWcStatus('WalletConnect library failed to load. Check your connection.', 'error');
+    return;
+  }
+  setWcStatus('Generating WalletConnect QR...', '');
+  try {
+    const WCP = window.WalletConnectProvider.default || window.WalletConnectProvider;
+    wcProvider = new WCP({
+      projectId: WALLETCONNECT_PROJECT_ID,
+      rpc: { [SEPOLIA_CHAIN_NUM]: ALCHEMY_URL },
+      chainId: SEPOLIA_CHAIN_NUM,
+      qrcode: false,
+    });
+
+    document.getElementById('wcQrSection').style.display = 'block';
+
+    wcProvider.connector.on('display_uri', async (err, payload) => {
+      if (err) return;
+      const uri = payload.params[0];
+      document.getElementById('wcUri').textContent = uri;
+      document.getElementById('wcUri').dataset.uri = uri;
+      await renderQR(uri);
+    });
+
+    await wcProvider.enable();
+    provider = new ethers.BrowserProvider(wcProvider);
+    signer   = await provider.getSigner();
+    await finishConnect();
+    closeWcModal();
+
+    wcProvider.on('disconnect', () => clearWalletState('Wallet disconnected.'));
+  } catch (e) {
+    if (!/User closed|closed/i.test(e.message || '')) {
+      setWcStatus('WalletConnect failed: ' + (e.message || e), 'error');
+    }
+  }
+}
+
+async function renderQR(uri) {
+  const box = document.getElementById('wcQrBox');
+  box.innerHTML = '';
+  try {
+    await loadScript('https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js');
+    new QRCode(box, { text: uri, width: 210, height: 210, colorDark: '#000', colorLight: '#fff' });
+  } catch {
+    box.textContent = 'QR failed — copy URI below';
+  }
+}
+
+function loadScript(src) {
+  return new Promise((res, rej) => {
+    if (document.querySelector(`script[src="${src}"]`)) { res(); return; }
+    const s = document.createElement('script');
+    s.src = src; s.onload = res; s.onerror = rej;
+    document.head.appendChild(s);
+  });
+}
+
+function copyWcUri() {
+  const uri = document.getElementById('wcUri').dataset.uri;
+  if (uri) navigator.clipboard?.writeText(uri).then(() => {
+    document.getElementById('wcUri').textContent = '✅ Copied!';
+    setTimeout(() => document.getElementById('wcUri').textContent = uri, 2000);
+  });
+}
+
+async function switchToSepolia(ethObj) {
+  try {
+    await ethObj.request({
+      method: 'wallet_switchEthereumChain',
+      params: [{ chainId: SEPOLIA_CHAIN_ID }],
+    });
+    return true;
+  } catch (e) {
+    if (e.code === 4902) {
+      try {
+        await ethObj.request({
+          method: 'wallet_addEthereumChain',
+          params: [{
+            chainId: SEPOLIA_CHAIN_ID,
+            chainName: 'Sepolia Test Network',
+            nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
+            rpcUrls: ['https://rpc.sepolia.org'],
+            blockExplorerUrls: ['https://sepolia.etherscan.io'],
+          }],
+        });
+        return true;
+      } catch (addErr) {
+        console.warn('addEthereumChain:', addErr);
+        return false;
+      }
+    }
+    if (e.code === 4001) return false;
+    console.warn('switchEthereumChain:', e);
+    return false;
+  }
+}
+
+async function finishConnect() {
+  walletAddress = await signer.getAddress();
+
+  const currentChain = await provider.send('eth_chainId', []);
+  const onSepolia = currentChain.toLowerCase() === SEPOLIA_CHAIN_ID;
+
+  if (!readProvider) {
+    readProvider = new ethers.JsonRpcProvider(
+      ALCHEMY_URL && ALCHEMY_URL !== 'YOUR_ALCHEMY_HTTPS_URL_HERE'
+        ? ALCHEMY_URL
+        : 'https://rpc.sepolia.org'
+    );
+  }
+
+  if (CONTRACT_ADDRESS && CONTRACT_ADDRESS !== 'YOUR_CONTRACT_ADDRESS_HERE') {
+    contract     = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
+    readContract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, readProvider);
+  }
+
+  const short = walletAddress.slice(0, 6) + '...' + walletAddress.slice(-4);
+  document.getElementById('connectBtn').textContent = short;
+  walletConnected = true;
+
+  if (!onSepolia) {
+    document.getElementById('startChainBtn').disabled = true;
+    setStatus('⚠️ Wallet connected but you are not on Sepolia. Please switch networks.', 'error');
+  } else {
+    document.getElementById('startChainBtn').disabled = !contract;
+    setStatus('✅ Wallet connected on Sepolia! Click "Play On-Chain" for NFT rewards.', 'success');
+  }
+}
+
+function bindWalletEvents(mm) {
+  if (window.__mmListenersBound) return;
+  window.__mmListenersBound = true;
+
+  mm.on('accountsChanged', async (accounts) => {
+    if (!accounts || !accounts.length) {
+      clearWalletState('Wallet disconnected.');
+      return;
+    }
+    try {
+      provider = new ethers.BrowserProvider(mm);
+      signer   = await provider.getSigner();
+      await finishConnect();
+      if (walletConnected && typeof loadAnalytics === 'function') {
+        if (document.getElementById('tab-analytics').classList.contains('show')) loadAnalytics();
+      }
+    } catch (e) {
+      clearWalletState('Failed to update wallet: ' + e.message);
+    }
+  });
+
+  mm.on('chainChanged', () => {
+    provider = new ethers.BrowserProvider(mm);
+    provider.getSigner().then(s => {
+      signer = s;
+      return finishConnect();
+    }).catch(() => clearWalletState('Please reconnect after network change.'));
+  });
+
+  mm.on('disconnect', () => clearWalletState('Wallet disconnected.'));
+}
+
+function clearWalletState(msg) {
+  walletConnected = false;
+  walletAddress = null;
+  contract = null;
+  signer = null;
+  provider = null;
+  document.getElementById('connectBtn').textContent = 'Connect Wallet';
+  document.getElementById('startChainBtn').disabled = true;
+  if (msg) setStatus(msg, 'error');
+}
+
+// ════════════════════════════════════════════════════
+//  ANALYTICS 
+// ════════════════════════════════════════════════════
+async function loadAnalytics() {
+  const el = document.getElementById('analyticsContent');
+  if (!walletConnected) {
+    el.innerHTML=`<div class="no-wallet"><div class="icon">🔌</div>
+      <h3>Wallet Not Connected</h3><p>Connect your wallet first.</p></div>`;
+    return;
+  }
+
+  el.innerHTML=`<div style="padding:40px;text-align:center;color:var(--subtext)">
+    <div class="skeleton" style="width:60%;margin:0 auto 12px;height:24px"></div>
+    <div class="skeleton" style="width:40%;margin:0 auto;height:16px"></div>
+    <p style="margin-top:20px;font-size:.85rem">Loading on-chain data...</p></div>`;
+
+  try {
+    let memoryBal=0n, nftBals=[0,0,0,0,0,0];
+    if (readContract) {
+      try {
+        memoryBal = await readContract.balanceOf(walletAddress, 0);
+        for (let i=1;i<=6;i++) nftBals[i-1] = Number(await readContract.balanceOf(walletAddress,i));
+      } catch(e){ console.warn("balanceOf:",e.message); }
+    }
+    const memFmt = Number(ethers.formatEther(memoryBal)).toFixed(0);
+    const totalNFTs = nftBals.reduce((a,b)=>a+b,0);
+
+    let ethBal=0n;
+    try{ ethBal = await readProvider.getBalance(walletAddress); }catch{}
+    const ethFmt = Number(ethers.formatEther(ethBal)).toFixed(4);
+
+    let txHistory = [...sessionTxs];
+    let gamesPlayed=0, pairsMatched=0, mismatches=0;
+    let gasWei = sessionGasSpent;
+
+    if (CONTRACT_ADDRESS !== "YOUR_CONTRACT_ADDRESS_HERE") {
+      const hasEtherscanKey = ETHERSCAN_API_KEY !== "YOUR_ETHERSCAN_API_KEY_HERE";
+      const apiKey = hasEtherscanKey ? ETHERSCAN_API_KEY : "";
+
+      const txUrl = `https://api-sepolia.etherscan.io/api?module=account&action=txlist`+
+        `&address=${walletAddress}&sort=desc&page=1&offset=50`+
+        (apiKey ? `&apikey=${apiKey}` : '');
+
+      try {
+        const resp = await fetch(txUrl);
+        const data = await resp.json();
+
+        if (data.status === "1" && Array.isArray(data.result)) {
+          const contractTxs = data.result.filter(tx =>
+            tx.to.toLowerCase() === CONTRACT_ADDRESS.toLowerCase() && tx.isError === "0"
+          );
+
+          const SIG_CREATE  = ethers.id("createGame(uint256,bool)").slice(0,10);
+          const SIG_SUBMIT  = ethers.id("submitPair(uint256,uint8,uint8)").slice(0,10);
+
+          for (const tx of contractTxs) {
+            const sel = tx.input.slice(0,10);
+            const gasUsedWei = BigInt(tx.gasUsed) * BigInt(tx.gasPrice);
+            gasWei += gasUsedWei;
+
+            if (sel === SIG_CREATE) {
+              gamesPlayed++;
+              txHistory.push({ type:'create', hash:tx.hash, block:tx.blockNumber,
+                label:'🎮 Game Created', gas: Number(ethers.formatEther(gasUsedWei)).toFixed(6) });
+            } else if (sel === SIG_SUBMIT) {
+              txHistory.push({ type:'submit', hash:tx.hash, block:tx.blockNumber,
+                label:'🃏 Pair Submitted', gas: Number(ethers.formatEther(gasUsedWei)).toFixed(6) });
+            }
+          }
+
+          const logUrl = `https://api-sepolia.etherscan.io/api?module=logs&action=getLogs`+
+            `&address=${CONTRACT_ADDRESS}&fromBlock=0&toBlock=latest`+
+            `&topic0=${ethers.id("PairMatched(uint256,address,uint8)")}`+
+            `&topic1=&topic2=${ethers.zeroPadValue(walletAddress,32)}`+
+            (apiKey ? `&apikey=${apiKey}` : '');
+
+          const missUrl = `https://api-sepolia.etherscan.io/api?module=logs&action=getLogs`+
+            `&address=${CONTRACT_ADDRESS}&fromBlock=0&toBlock=latest`+
+            `&topic0=${ethers.id("PairMismatched(uint256,address,uint8,uint8)")}`+
+            `&topic2=${ethers.zeroPadValue(walletAddress,32)}`+
+            (apiKey ? `&apikey=${apiKey}` : '');
+
+          const [matchResp, missResp] = await Promise.all([fetch(logUrl), fetch(missUrl)]);
+          const [matchData, missData] = await Promise.all([matchResp.json(), missResp.json()]);
+
+          if (matchData.status==="1") pairsMatched = matchData.result.length;
+          if (missData.status==="1")  mismatches   = missData.result.length;
+
+          if (matchData.status==="1") {
+            for (const log of matchData.result.slice(0,10)) {
+              txHistory.push({ type:'match', hash:log.transactionHash,
+                block: parseInt(log.blockNumber,16),
+                label:`✅ Pair Matched — NFT minted`, gas:'' });
+            }
+          }
+          if (missData.status==="1") {
+            for (const log of missData.result.slice(0,10)) {
+              txHistory.push({ type:'miss', hash:log.transactionHash,
+                block: parseInt(log.blockNumber,16),
+                label:'❌ Mismatch', gas:'' });
+            }
+          }
+          const seen = new Set();
+          txHistory = txHistory
+            .sort((a,b)=>Number(b.block)-Number(a.block))
+            .filter(t=>{ if(seen.has(t.hash)) return false; seen.add(t.hash); return true; })
+            .slice(0,12);
+        }
+      } catch(e){ console.warn("Etherscan fetch:", e.message); }
+    }
+
+    const totalAttempts = pairsMatched + mismatches;
+    const accuracy = totalAttempts > 0 ? Math.round((pairsMatched/totalAttempts)*100) : 0;
+    const gasEth = Number(ethers.formatEther(gasWei)).toFixed(6);
+
+    el.innerHTML = `
+      <div class="analytics-header">
+        <h2>📊 Your Stats</h2>
+        <button class="refresh-btn" onclick="loadAnalytics()">↻ Refresh</button>
+      </div>
+      <div class="stat-grid">
+        <div class="stat-card green">
+          <div class="s-label">$MEMORY Earned</div>
+          <div class="s-value">${Number(memFmt).toLocaleString()}</div>
+          <div class="s-sub">10 per pair matched</div>
+        </div>
+        <div class="stat-card purple">
+          <div class="s-label">NFTs Collected</div>
+          <div class="s-value">${totalNFTs}</div>
+          <div class="s-sub">${totalNFTs} shape NFTs</div>
+        </div>
+        <div class="stat-card blue">
+          <div class="s-label">Games Played</div>
+          <div class="s-value">${gamesPlayed}</div>
+          <div class="s-sub">On-chain games</div>
+        </div>
+        <div class="stat-card red">
+          <div class="s-label">Accuracy</div>
+          <div class="s-value">${accuracy}%</div>
+          <div class="s-sub">${pairsMatched}✅ ${mismatches}❌</div>
+        </div>
+      </div>
+
+      <div class="token-row">
+        <h3>💰 Token Balances</h3>
+        <div class="token-item">
+          <div class="token-left">
+            <div class="token-icon" style="background:rgba(255,209,102,.15);color:var(--gold)">💎</div>
+            <div><div class="token-name">$MEMORY</div><div class="token-sub">ERC-1155 · Token ID 0</div></div>
+          </div>
+          <div>
+            <div class="token-amount" style="color:var(--gold)">${Number(memFmt).toLocaleString()}</div>
+            <div class="token-usd">Testnet only</div>
+          </div>
+        </div>
+        <div class="token-item">
+          <div class="token-left">
+            <div class="token-icon" style="background:rgba(76,201,240,.15);color:var(--accent3)">Ξ</div>
+            <div><div class="token-name">Sepolia ETH</div><div class="token-sub">Gas token</div></div>
+          </div>
+          <div>
+            <div class="token-amount" style="color:var(--accent3)">${ethFmt}</div>
+            <div class="token-usd">Free from faucet</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="nft-section">
+        <h3>🎨 NFT Collection</h3>
+        <div class="nft-grid">
+          ${[1,2,3,4,5,6].map(id=>`
+            <div class="nft-card-mini ${nftBals[id-1]>0?'owned':''}">
+              <svg viewBox="0 0 100 100"><use href="#shape-${id}"/></svg>
+              <div class="nft-count">${nftBals[id-1]>0?'×'+nftBals[id-1]:'—'}</div>
+              <div class="nft-name">${SHAPE_NAMES[id]}</div>
+            </div>`).join('')}
+        </div>
+      </div>
+
+      <div class="gas-row">
+        <h3>⛽ Gas Spent</h3>
+        <div class="gas-item">
+          <span class="gas-label">Total spent (all time)</span>
+          <span class="gas-val">${gasEth} ETH</span>
+        </div>
+        <div class="gas-item">
+          <span class="gas-label">Per game (approx)</span>
+          <span class="gas-val">~0.0003 ETH</span>
+        </div>
+        <div class="gas-item">
+          <span class="gas-label">Per pair match (approx)</span>
+          <span class="gas-val">~0.00004 ETH</span>
+        </div>
+        <div class="gas-item">
+          <span class="gas-label" style="font-size:.72rem;color:var(--subtext)">All Sepolia ETH — zero real cost</span>
+          <a href="https://sepolia.etherscan.io/address/${walletAddress}" target="_blank"
+            style="font-size:.72rem;color:var(--accent2);text-decoration:none">Etherscan ↗</a>
+        </div>
+      </div>
+
+      <div class="tx-section">
+        <h3>🔗 Recent Transactions</h3>
+        ${txHistory.length===0
+          ? `<div style="color:var(--subtext);font-size:.85rem;padding:12px 0">
+              No transactions found yet. ${ETHERSCAN_API_KEY==="YOUR_ETHERSCAN_API_KEY_HERE"
+                ? '⚠️ Add your Etherscan API key in the config for full history.'
+                : 'Play On-Chain to start!'}</div>`
+          : txHistory.map(tx=>`
+            <div class="tx-item">
+              <div class="tx-dot ${tx.type==='match'?'match':tx.type==='miss'?'miss':'create'}"></div>
+              <div class="tx-body">
+                <div class="tx-title">${tx.label}</div>
+                <div class="tx-hash">
+                  <a href="https://sepolia.etherscan.io/tx/${tx.hash}" target="_blank"
+                    style="color:var(--accent2);text-decoration:none">
+                    ${tx.hash.slice(0,10)}...${tx.hash.slice(-6)} ↗
+                  </a>
+                </div>
+              </div>
+              <div class="tx-gas">${tx.gas ? tx.gas+' ETH' : 'Block #'+tx.block}</div>
+            </div>`).join('')}
+      </div>`;
+
+  } catch(e) {
+    el.innerHTML=`<div class="no-wallet"><div class="icon">⚠️</div>
+      <h3>Error</h3><p>${e.message}</p>
+      <br><button class="btn btn-secondary" onclick="loadAnalytics()" style="max-width:160px">Retry</button></div>`;
+  }
+}
+
+// ════════════════════════════════════════════════════
+//  GAME
+// ════════════════════════════════════════════════════
+function shuffleLocal() {
+  let c=[1,1,2,2,3,3,4,4,5,5,6,6];
+  for(let i=c.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [c[i],c[j]]=[c[j],c[i]]; }
+  return c;
+}
+
+function newGame() {
+  clearInterval(timerInterval);
+  onChainMode=false; gameId=null; flipped=[]; matched=[];
+  lockBoard=false; moves=0; pairs=0; seconds=0; nftsMinted=[];
+  board=shuffleLocal(); renderGrid(); updateScores(); updateTimerDisplay();
+  document.getElementById('nftTicker').innerHTML='<div class="nft-chip">🏅 NFTs minted here</div>';
+  setStatus("Find all 6 pairs! Flip two cards to match shapes.","info");
+  timerInterval=setInterval(()=>{ seconds++; updateTimerDisplay(); },1000);
+}
+
+async function startChainGame() {
+  if (!walletConnected||!contract){ setStatus("Connect wallet first.","error"); return; }
+  const spinner=document.getElementById('chainSpinner');
+  const btn=document.getElementById('startChainBtn');
+  spinner.classList.add('show'); btn.disabled=true;
+  setStatus("Creating game on Sepolia... confirm in wallet","info");
+  try {
+    const seed=BigInt(Math.floor(Math.random()*1e15));
+    const tx=await contract.createGame(seed,true);
+    setStatus("Waiting for confirmation...","info");
+    const receipt=await tx.wait();
+
+    const gasUsed=receipt.gasUsed*(receipt.gasPrice||receipt.effectiveGasPrice||1500000000n);
+    sessionGasSpent+=gasUsed;
+    sessionTxs.unshift({type:'create',block:receipt.blockNumber,hash:receipt.hash,label:'🎮 Game Created',gas:Number(ethers.formatEther(gasUsed)).toFixed(6)});
+
+    const TOPIC=ethers.id("GameCreated(uint256,address,bool)");
+    let gid=null;
+    for (const log of receipt.logs) {
+      if(log.topics[0]===TOPIC){ gid=BigInt(log.topics[1]); break; }
+    }
+    if(gid===null){
+      const raw=await provider.call({to:CONTRACT_ADDRESS,data:"0x61da1439"});
+      gid=BigInt(raw)-1n;
+    }
+    gameId=gid; onChainMode=true;
+    // Read the ACTUAL board from the contract — must match what contract stored
+    setStatus("Reading board from contract...","info");
+    const onChainBoard = await contract.getBoard(gameId);
+    board = Array.from(onChainBoard).map(n => Number(n));
+    flipped=[]; matched=[]; lockBoard=false;
+    moves=0; pairs=0; seconds=0; nftsMinted=[];
+    clearInterval(timerInterval);
+    timerInterval=setInterval(()=>{ seconds++; updateTimerDisplay(); },1000);
+    renderGrid(); updateScores();
+    setStatus(`🔗 On-chain game #${gameId}! Board synced. Flip to play!`,"success");
+  } catch(e){
+    setStatus("TX failed: "+(e.reason||e.message),"error");
+  } finally {
+    spinner.classList.remove('show'); btn.disabled=false;
+  }
+}
+
+function renderGrid() {
+  const g=document.getElementById('cardGrid'); g.innerHTML='';
+  for(let i=0;i<12;i++){
+    const card=document.createElement('div');
+    card.className='card'; card.dataset.index=i;
+    card.innerHTML=`<div class="card-inner">
+      <div class="card-back"><div class="pattern">${Array(9).fill('<span></span>').join('')}</div></div>
+      <div class="card-front"><svg class="shape-icon" width="52" height="52" viewBox="0 0 100 100"><use href="#shape-${board[i]}"/></svg></div>
+    </div>`;
+    card.addEventListener('click',()=>onCardClick(i));
+    g.appendChild(card);
+  }
+}
+function getCardEl(i){ return document.querySelector(`.card[data-index="${i}"]`); }
+
+async function onCardClick(i) {
+  if(lockBoard||matched.includes(i)||flipped.includes(i)||flipped.length>=2) return;
+  getCardEl(i).classList.add('flipped');
+  flipped.push(i);
+  if(flipped.length===2){ lockBoard=true; moves++; updateScores(); await checkMatch(flipped[0],flipped[1]); }
+}
+
+async function checkMatch(i1, i2) {
+  const localMatch = board[i1]===board[i2];
+
+  if (onChainMode && contract && gameId!==null) {
+    if (localMatch) {
+      applyMatch(i1, i2);
+      setStatus("✅ Match! Sending TX to mint NFT...","success");
+      contract.submitPair(gameId, i1, i2).then(async tx => {
+        const receipt = await tx.wait();
+        const gasUsed=receipt.gasUsed*(receipt.gasPrice||receipt.effectiveGasPrice||1500000000n);
+        sessionGasSpent+=gasUsed;
+        sessionTxs.unshift({type:'match',block:receipt.blockNumber,hash:receipt.hash,
+          label:`✅ Pair Matched — ${SHAPE_NAMES[board[i1]]} NFT minted`,gas:Number(ethers.formatEther(gasUsed)).toFixed(6)});
+        addNftChip(board[i1]);
+        setStatus(`🎨 ${SHAPE_NAMES[board[i1]]} NFT minted! +10 $MEMORY`,"success");
+        if(pairs===6) setTimeout(showWin,400);
+      }).catch(e => {
+        setStatus("Mint TX failed: "+(e.reason||e.message),"error");
+      });
+    } else {
+      applyMismatch(i1, i2);
+      contract.submitPair(gameId, i1, i2).then(async tx => {
+        const receipt = await tx.wait();
+        const gasUsed=receipt.gasUsed*(receipt.gasPrice||receipt.effectiveGasPrice||1500000000n);
+        sessionGasSpent+=gasUsed;
+        sessionTxs.unshift({type:'miss',block:receipt.blockNumber,hash:receipt.hash,label:'❌ Mismatch',gas:Number(ethers.formatEther(gasUsed)).toFixed(6)});
+      }).catch(()=>{});
+    }
+  } else {
+    await delay(350);
+    if(localMatch) applyMatch(i1,i2);
+    else applyMismatch(i1,i2);
+  }
+}
+
+function applyMatch(i1,i2){
+  const shape=board[i1];
+  matched.push(i1,i2); flipped=[]; pairs++;
+  getCardEl(i1)?.classList.add('matched','pop');
+  getCardEl(i2)?.classList.add('matched','pop');
+  setTimeout(()=>{ getCardEl(i1)?.classList.remove('pop'); getCardEl(i2)?.classList.remove('pop'); },300);
+  if(!onChainMode) addNftChip(shape);
+  updateScores();
+  setStatus(`✨ ${SHAPE_NAMES[shape]} matched! +10 $MEMORY`,"success");
+  lockBoard=false;
+  if(pairs===6 && !onChainMode) setTimeout(showWin,600);
+}
+
+function applyMismatch(i1,i2){
+  getCardEl(i1)?.classList.add('shake');
+  getCardEl(i2)?.classList.add('shake');
+  setTimeout(()=>{
+    getCardEl(i1)?.classList.remove('shake','flipped');
+    getCardEl(i2)?.classList.remove('shake','flipped');
+    flipped=[]; lockBoard=false;
+    setStatus("No match — try again!","error");
+  },900);
+}
+
+function updateScores(){
+  document.getElementById('pairsFound').textContent=pairs;
+  document.getElementById('moveCount').textContent=moves;
+}
+function updateTimerDisplay(){
+  const m=Math.floor(seconds/60),s=seconds%60;
+  document.getElementById('timerDisplay').textContent=`${m}:${s.toString().padStart(2,'0')}`;
+}
+function setStatus(msg,type=''){
+  const el=document.getElementById('statusBanner');
+  el.textContent=msg; el.className='status-banner '+type;
+}
+function addNftChip(id){
+  nftsMinted.push(id);
+  const t=document.getElementById('nftTicker');
+  const ph=t.querySelector('.nft-chip');
+  if(ph&&ph.textContent.includes('minted here')) ph.remove();
+  const c=document.createElement('div'); c.className='nft-chip';
+  c.innerHTML=`${SHAPE_EMOJIS[id]} ${SHAPE_NAMES[id]} NFT`;
+  t.appendChild(c); t.scrollLeft=t.scrollWidth;
+}
+function showWin(){
+  clearInterval(timerInterval);
+  const m=Math.floor(seconds/60),s=seconds%60;
+  document.getElementById('winPairs').textContent=pairs;
+  document.getElementById('winMoves').textContent=moves;
+  document.getElementById('winTime').textContent=`${m}:${s.toString().padStart(2,'0')}`;
+  document.getElementById('nftMintedMsg').textContent=
+    `🎨 ${nftsMinted.length} NFTs • ${nftsMinted.length*10} $MEMORY ${onChainMode?'minted to wallet!':'(local mode)'}`;
+  const msgs=["Incredible memory!","You crushed it!","Flawless victory!","Memory master!"];
+  document.getElementById('winSubtitle').textContent=msgs[Math.floor(Math.random()*msgs.length)];
+  document.getElementById('winModal').classList.add('show');
+  if(window.Telegram?.WebApp?.sendData)
+    Telegram.WebApp.sendData(JSON.stringify({event:'game_over',pairs,moves,time:seconds,nfts:nftsMinted.length}));
+}
+function closeModal(){ document.getElementById('winModal').classList.remove('show'); }
+function delay(ms){ return new Promise(r=>setTimeout(r,ms)); }
+
+newGame();
+</script>
+</body>
+</html>
